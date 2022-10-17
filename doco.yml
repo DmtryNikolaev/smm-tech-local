@@ -1,0 +1,212 @@
+version: '3.9'
+
+x-logging:
+  &default-logging
+  driver: json-file
+#  driver: gelf
+#  options:
+#    gelf-address: "udp://127.0.0.1:12201" # Logstash UDP input port
+
+x-args:
+  &default-args
+  BACK_URL: "${SITE_URL}"
+#  https://localhost:8888
+
+x-environment:
+  &default-env
+  - HOST=0.0.0.0
+
+services:
+  back:
+    container_name: back
+    build:
+      context: ./back/docker/php
+#      dockerfile: Dockerfile.xdebug
+    depends_on:
+      - pg
+      - memcached
+    restart: unless-stopped
+#    command: "php artisan serve --host 0.0.0.0 --port ${BACK_PORT}"
+#    ports:
+#      - 8888:8888
+    volumes:
+      - back:/var/www
+    logging: *default-logging
+    networks:
+      - net1
+    deploy:
+      resources:
+        limits:
+          cpus: '3.00'
+          memory: 6G
+
+  worker:
+    container_name: worker
+    build:
+      context: ./back/docker/php
+    depends_on:
+      - pg
+      - memcached
+      - redis
+    restart: unless-stopped
+    working_dir: /var/www/docker/worker
+    entrypoint: "/usr/bin/supervisord -n"
+    volumes_from:
+      - back
+    logging: *default-logging
+    networks:
+      - net1
+    expose:
+      - 9001
+    deploy:
+      resources:
+        limits:
+          cpus: '2.00'
+          memory: 3G
+
+  redis:
+    container_name: redis
+    image: redis:alpine
+    restart: unless-stopped
+    networks:
+      - net1
+    deploy:
+      resources:
+        limits:
+          cpus: '4.00'
+          memory: 4G
+
+  memcached:
+    container_name: memcached
+    image: memcached:1.6
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - net1
+    deploy:
+      resources:
+        limits:
+          cpus: '4.00'
+          memory: 4G
+
+  pg:
+    container_name: pg
+    image: postgres:10
+    restart: unless-stopped
+    command: postgres -c config_file=/etc/postgresql.conf
+    environment:
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - ./postgres/etc:/data
+      - ./postgres/postgresql.conf:/etc/postgresql.conf
+      - ./postgres/data:/var/lib/postgresql/data
+    logging: *default-logging
+    networks:
+      - net1
+    deploy:
+      resources:
+        limits:
+          cpus: '3.50'
+          memory: 6G
+
+  pgadmin4:
+    container_name: pgadmin4
+    image: dpage/pgadmin4
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "${PGADMIN_EMAIL}"
+      PGADMIN_DEFAULT_PASSWORD: "${PGADMIN_PASSWORD}"
+    volumes:
+      - ./postgres/admin:/var/lib/pgadmin
+    logging: *default-logging
+    networks:
+      - net1
+    deploy:
+      resources:
+        limits:
+          cpus: '3.00'
+          memory: 2G
+
+  front:
+    container_name: front
+    build:
+      context: ./front/
+      dockerfile: local.Dockerfile
+      args: *default-args
+    restart: unless-stopped
+    command: bash -c "npm i && HOST=0 npm run dev"
+    expose:
+      - 3000
+#    environment: *default-env
+    volumes:
+      - ./front:/usr/src/front
+    logging: *default-logging
+    networks:
+      - net1
+    deploy:
+      resources:
+        limits:
+          cpus: '3.00'
+          memory: 8G
+
+  admin:
+    container_name: admin
+    build:
+      context: ./admin/
+      dockerfile: local.Dockerfile
+      args: *default-args
+    restart: unless-stopped
+    command: bash -c "npm i && HOST=0 npm run dev"
+    expose:
+      - 3000
+#    environment: *default-env
+    volumes:
+      - ./admin:/usr/src/admin
+    logging: *default-logging
+    networks:
+      - net1
+    deploy:
+      resources:
+        limits:
+          cpus: '3.00'
+          memory: 4G
+
+  nginx:
+    image: nginx:mainline
+    container_name: nginx
+    restart: unless-stopped
+    tty: true
+    ports:
+      - 80:80
+#      - 443:443
+    volumes:
+      - back:/var/www
+      - ./nginx/config/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/config:/etc/nginx/config
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    logging: *default-logging
+    networks:
+      - net1
+    deploy:
+      resources:
+        limits:
+          cpus: '2.00'
+          memory: 1G
+
+volumes:
+  back:
+    driver: local
+    driver_opts:
+      type: bind
+      o: bind
+      device: ./back
+
+networks:
+  net1:
+    driver: bridge
+#    ipam:
+#      driver: default
+#      config:
+#        - subnet: 172.29.0.0/16
+#          gateway: 172.29.0.1
