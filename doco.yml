@@ -25,6 +25,7 @@ services:
     depends_on:
       - pg
       - memcached
+      - redis
     restart: unless-stopped
 #    command: "php artisan serve --host 0.0.0.0 --port ${BACK_PORT}"
 #    ports:
@@ -100,7 +101,7 @@ services:
     volumes:
       - ./postgres/etc:/data
       - ./postgres/postgresql.conf:/etc/postgresql.conf
-      - ./postgres/data:/var/lib/postgresql/data
+      - pg_data:/var/lib/postgresql/data
     logging: *default-logging
     networks:
       - net1
@@ -195,10 +196,12 @@ services:
           memory: 1G
 
 volumes:
+  pg_data:
+    driver: local
   back:
     driver: local
     driver_opts:
-      type: bind
+      type: none
       o: bind
       device: ./back
 
