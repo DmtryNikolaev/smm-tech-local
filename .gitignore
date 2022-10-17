@@ -1,0 +1,7 @@
+.env
+.env.example
+postgres
+nginx
+front
+back
+admin
